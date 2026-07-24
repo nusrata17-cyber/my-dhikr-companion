@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DHIKR_LIST, getDhikr } from "@/lib/dhikr/data";
-import { loadProfile, saveProfile, recordFeedback } from "@/lib/dhikr/storage";
+import { loadProfile, recordFeedback } from "@/lib/dhikr/storage";
 import { bestSimilarity, countOccurrences, normalize } from "@/lib/dhikr/normalize";
 import {
   isSpeechRecognitionSupported,
@@ -324,6 +324,3 @@ function Home() {
     </div>
   );
 }
-
-// Silence unused-warning for saveProfile import via re-export
-export { saveProfile };
