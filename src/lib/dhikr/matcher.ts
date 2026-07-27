@@ -35,13 +35,16 @@ export function skeleton(input: string): string {
   if (!n) return "";
   const isArabic = ARABIC_RE.test(n);
   let s = n.replace(/\s+/g, "");
-  if (isArabic) {
-    // drop long vowels / hamza carriers that ASR spells inconsistently
-    s = s.replace(/[\u0627\u0648\u064a\u0621]/g, "");
-  } else {
-    s = s.replace(/[aeiouy']/g, "");
+  if (!isArabic) {
+    // unify common transliteration digraphs
+    s = s
+      .replace(/gh/g, "g")
+      .replace(/kh/g, "k")
+      .replace(/dh/g, "d")
+      .replace(/th/g, "t")
+      .replace(/['`\u2019]/g, "");
   }
-  // collapse repeated letters (illallah / ilallah)
+  // collapse repeated letters (illallah / ilallah, laa / la)
   s = s.replace(/(.)\1+/g, "$1");
   return s;
 }
