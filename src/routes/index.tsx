@@ -345,7 +345,56 @@ function Home() {
             </div>
           </div>
         )}
+
+        {/* Debug mode */}
+        <div className="pt-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={debugMode}
+              onChange={(e) => {
+                setDebugMode(e.target.checked);
+                localStorage.setItem("dhikr.debug", e.target.checked ? "1" : "0");
+              }}
+              className="accent-primary"
+            />
+            Debug mode
+          </label>
+
+          {debugMode && (
+            <div className="mt-3 rounded-2xl border border-border bg-card p-3 space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                Hearing: <span className="text-foreground">{interim || "—"}</span>
+              </p>
+              {debugLog.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">No results yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {debugLog.map((d) => (
+                    <li key={d.at + d.text} className="text-[11px] leading-snug">
+                      <span className={d.ok ? "text-primary" : "text-destructive"}>
+                        {d.ok ? "✓" : "✕"}
+                      </span>{" "}
+                      <span className="text-foreground">"{d.text}"</span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — {d.reason} (score {d.score.toFixed(2)})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                onClick={() => setDebugLog([])}
+                className="text-[11px] text-muted-foreground underline"
+              >
+                Clear log
+              </button>
+            </div>
+          )}
+        </div>
       </main>
+
     </div>
   );
 }
