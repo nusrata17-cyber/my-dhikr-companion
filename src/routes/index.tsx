@@ -2,7 +2,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DHIKR_LIST, getDhikr } from "@/lib/dhikr/data";
 import { loadProfile, recordFeedback } from "@/lib/dhikr/storage";
-import { bestSimilarity, countOccurrences, normalize } from "@/lib/dhikr/normalize";
+import { normalize } from "@/lib/dhikr/normalize";
+import {
+  describeReason,
+  matchTranscript,
+  prepareReferences,
+  scoreAgainst,
+} from "@/lib/dhikr/matcher";
+
 import {
   isSpeechRecognitionSupported,
   useSpeechRecognition,
@@ -46,7 +53,16 @@ function Home() {
   const profile = useMemo(() => loadProfile(selected.id), [selected.id, lastMatchAt]);
   const calibrated = !!profile && profile.samples.length >= 5;
 
+  const [debugMode, setDebugMode] = useState(false);
+  type DebugEntry = { at: number; text: string; ok: boolean; reason: string; score: number };
+  const [debugLog, setDebugLog] = useState<DebugEntry[]>([]);
+
   const lastCountAtRef = useRef(0);
+
+  useEffect(() => {
+    setDebugMode(localStorage.getItem("dhikr.debug") === "1");
+  }, []);
+
 
   useEffect(() => {
     setSupported(isSpeechRecognitionSupported());
@@ -56,49 +72,57 @@ function Home() {
     localStorage.setItem("dhikr.selected", selectedId);
   }, [selectedId]);
 
+  // References = canonical spellings + calibration transcripts that were
+  // verified to actually be this dhikr. Calibration widens accepted spellings,
+  // it never lets a different phrase count.
   const references = useMemo(() => {
-    const canonical = selected.canonical.map(normalize);
-    const samples = (profile?.samples ?? []).map((s) => normalize(s.transcript)).filter(Boolean);
-    return Array.from(new Set([...canonical, ...samples]));
+    const canonical = prepareReferences(selected.canonical);
+    const samples = (profile?.samples ?? [])
+      .map((s) => s.transcript)
+      .filter((t) => scoreAgainst(t, canonical) >= 0.7);
+    return prepareReferences([...selected.canonical, ...samples]);
   }, [selected, profile]);
+
+  const lastTranscriptRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
 
   const handleFinal = useCallback(
     ({ transcript, at }: { transcript: string; at: number }) => {
       setInterim("");
-      // Guard against a single utterance being re-processed
-      const occurrences = countOccurrences(transcript, references);
-      if (occurrences <= 0) return;
-      const now = at;
-      // Debounce: minimum 350ms between counted repetitions
-      if (now - lastCountAtRef.current < 350) return;
-      lastCountAtRef.current = now;
-      setCount((c) => c + occurrences);
-      setLastMatchAt(now);
+      // Duplicate guard: the engine can re-emit the same final utterance
+      const norm = normalize(transcript);
+      if (norm && norm === lastTranscriptRef.current.text && at - lastTranscriptRef.current.at < 1500) {
+        setDebugLog((l) =>
+          [{ at, text: transcript, ok: false, reason: describeReason("duplicate"), score: 1 }, ...l].slice(0, 12),
+        );
+        return;
+      }
+      lastTranscriptRef.current = { text: norm, at };
+
+      const result = matchTranscript(transcript, references);
+      setDebugLog((l) =>
+        [
+          {
+            at,
+            text: transcript,
+            ok: result.accepted,
+            reason: result.accepted
+              ? `Accepted ×${result.count}`
+              : describeReason(result.reason),
+            score: result.bestScore,
+          },
+          ...l,
+        ].slice(0, 12),
+      );
+      if (!result.accepted) return;
+      setCount((c) => c + result.count);
+      setLastMatchAt(at);
       setShowFeedback(true);
     },
     [references],
   );
 
-  const handleInterim = useCallback(
-    (text: string) => {
-      setInterim(text);
-      // Live detection from interim results for snappier feedback,
-      // but only fire when similarity is high (avoids partials false-positives).
-      const trimmed = text.trim().split(/[.!?،]/).pop() ?? "";
-      if (!trimmed) return;
-      const sim = bestSimilarity(trimmed, references);
-      if (sim >= 0.78) {
-        const now = Date.now();
-        if (now - lastCountAtRef.current < 700) return;
-        lastCountAtRef.current = now;
-        setCount((c) => c + 1);
-        setLastMatchAt(now);
-        setShowFeedback(true);
-        setInterim("");
-      }
-    },
-    [references],
-  );
+  // Interim results are shown only — never counted (prevents double counting).
+  const handleInterim = useCallback((text: string) => setInterim(text), []);
 
   const handleError = useCallback((err: string) => {
     if (err === "not-allowed" || err === "service-not-allowed") {
@@ -118,6 +142,7 @@ function Home() {
     onInterim: handleInterim,
     onError: handleError,
   });
+
 
   const toggleListen = () => {
     setErrorMsg(null);
@@ -320,7 +345,56 @@ function Home() {
             </div>
           </div>
         )}
+
+        {/* Debug mode */}
+        <div className="pt-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={debugMode}
+              onChange={(e) => {
+                setDebugMode(e.target.checked);
+                localStorage.setItem("dhikr.debug", e.target.checked ? "1" : "0");
+              }}
+              className="accent-primary"
+            />
+            Debug mode
+          </label>
+
+          {debugMode && (
+            <div className="mt-3 rounded-2xl border border-border bg-card p-3 space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                Hearing: <span className="text-foreground">{interim || "—"}</span>
+              </p>
+              {debugLog.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">No results yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {debugLog.map((d) => (
+                    <li key={d.at + d.text} className="text-[11px] leading-snug">
+                      <span className={d.ok ? "text-primary" : "text-destructive"}>
+                        {d.ok ? "✓" : "✕"}
+                      </span>{" "}
+                      <span className="text-foreground">"{d.text}"</span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — {d.reason} (score {d.score.toFixed(2)})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                onClick={() => setDebugLog([])}
+                className="text-[11px] text-muted-foreground underline"
+              >
+                Clear log
+              </button>
+            </div>
+          )}
+        </div>
       </main>
+
     </div>
   );
 }
