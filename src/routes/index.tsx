@@ -2,7 +2,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DHIKR_LIST, getDhikr } from "@/lib/dhikr/data";
 import { loadProfile, recordFeedback } from "@/lib/dhikr/storage";
-import { bestSimilarity, countOccurrences, normalize } from "@/lib/dhikr/normalize";
+import { normalize } from "@/lib/dhikr/normalize";
+import {
+  describeReason,
+  matchTranscript,
+  prepareReferences,
+  scoreAgainst,
+} from "@/lib/dhikr/matcher";
+
 import {
   isSpeechRecognitionSupported,
   useSpeechRecognition,
@@ -46,7 +53,16 @@ function Home() {
   const profile = useMemo(() => loadProfile(selected.id), [selected.id, lastMatchAt]);
   const calibrated = !!profile && profile.samples.length >= 5;
 
+  const [debugMode, setDebugMode] = useState(false);
+  type DebugEntry = { at: number; text: string; ok: boolean; reason: string; score: number };
+  const [debugLog, setDebugLog] = useState<DebugEntry[]>([]);
+
   const lastCountAtRef = useRef(0);
+
+  useEffect(() => {
+    setDebugMode(localStorage.getItem("dhikr.debug") === "1");
+  }, []);
+
 
   useEffect(() => {
     setSupported(isSpeechRecognitionSupported());
