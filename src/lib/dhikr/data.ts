@@ -33,6 +33,44 @@ export const DHIKR_LIST: Dhikr[] = [
       "لا إله إلا الله",
     ],
   },
+  {
+    id: "subhanallah",
+    arabic: "سُبْحَانَ ٱللَّٰه",
+    transliteration: "SubhanAllah",
+    canonical: [
+      "subhanallah",
+      "subhan allah",
+      "subhaanallah",
+      "sobhanallah",
+      "سبحان الله",
+    ],
+  },
+  {
+    id: "alhamdulillah",
+    arabic: "ٱلْحَمْدُ لِلَّٰه",
+    transliteration: "Alhamdulillah",
+    canonical: [
+      "alhamdulillah",
+      "alhamdu lillah",
+      "al hamdu lillah",
+      "alhamdulilah",
+      "الحمد لله",
+    ],
+  },
+  {
+    id: "allahu-akbar",
+    arabic: "ٱللَّٰهُ أَكْبَر",
+    transliteration: "Allahu Akbar",
+    canonical: [
+      "allahu akbar",
+      "allah akbar",
+      "allahuakbar",
+      "allaahu akbar",
+      "الله اكبر",
+      "الله أكبر",
+    ],
+  },
 ];
+
 
 export const getDhikr = (id: string) => DHIKR_LIST.find((d) => d.id === id);
