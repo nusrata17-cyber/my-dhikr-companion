@@ -13,6 +13,7 @@ export const DHIKR_LIST: Dhikr[] = [
     id: "astaghfirullah",
     arabic: "أَسْتَغْفِرُ ٱللَّٰه",
     transliteration: "Astaghfirullah",
+    meaning: "I seek forgiveness from Allah.",
     canonical: [
       "astaghfirullah",
       "astagfirullah",
@@ -26,6 +27,7 @@ export const DHIKR_LIST: Dhikr[] = [
     id: "la-ilaha-illallah",
     arabic: "لَا إِلَٰهَ إِلَّا ٱللَّٰه",
     transliteration: "La ilaha illallah",
+    meaning: "There is no god worthy of worship except Allah.",
     canonical: [
       "la ilaha illallah",
       "la ilaha illa allah",
@@ -39,6 +41,7 @@ export const DHIKR_LIST: Dhikr[] = [
     id: "subhanallah",
     arabic: "سُبْحَانَ ٱللَّٰه",
     transliteration: "SubhanAllah",
+    meaning: "Glory be to Allah.",
     canonical: [
       "subhanallah",
       "subhan allah",
@@ -51,6 +54,7 @@ export const DHIKR_LIST: Dhikr[] = [
     id: "alhamdulillah",
     arabic: "ٱلْحَمْدُ لِلَّٰه",
     transliteration: "Alhamdulillah",
+    meaning: "All praise is due to Allah.",
     canonical: [
       "alhamdulillah",
       "alhamdu lillah",
@@ -63,6 +67,7 @@ export const DHIKR_LIST: Dhikr[] = [
     id: "allahu-akbar",
     arabic: "ٱللَّٰهُ أَكْبَر",
     transliteration: "Allahu Akbar",
+    meaning: "Allah is the Greatest.",
     canonical: [
       "allahu akbar",
       "allah akbar",
