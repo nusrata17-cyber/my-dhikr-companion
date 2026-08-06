@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DHIKR_LIST, getDhikr } from "@/lib/dhikr/data";
-import { loadProfile, recordFeedback } from "@/lib/dhikr/storage";
+import { loadProfile } from "@/lib/dhikr/storage";
 import { normalize } from "@/lib/dhikr/normalize";
 import {
   describeReason,
@@ -9,31 +9,57 @@ import {
   prepareReferences,
   scoreAgainst,
 } from "@/lib/dhikr/matcher";
-
+import {
+  TARGET_PRESETS,
+  averagePace,
+  computeStreaks,
+  formatDuration,
+  humanDuration,
+  playCompletionCue,
+  saveSession,
+  setSoundEnabled,
+  soundEnabled,
+  type DhikrSession,
+} from "@/lib/dhikr/session";
 import {
   isSpeechRecognitionSupported,
   useSpeechRecognition,
 } from "@/lib/dhikr/useSpeechRecognition";
-import { Mic, MicOff, Plus, RotateCcw, Settings as SettingsIcon, Check, X, AlertCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Flame,
+  History,
+  Mic,
+  MicOff,
+  Minus,
+  Plus,
+  RotateCcw,
+  Settings as SettingsIcon,
+} from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dhikr Counter — Voice-powered remembrance" },
+      { title: "Dhikr Companion — Voice-powered remembrance" },
       {
         name: "description",
         content:
-          "A peaceful, private voice-powered dhikr counter. Recite Astaghfirullah or La ilaha illallah and let the app count each repetition.",
+          "A peaceful, private voice dhikr counter with targets, session history and daily streaks. Recite and let the app count each repetition.",
       },
-      { property: "og:title", content: "Dhikr Counter" },
+      { property: "og:title", content: "Dhikr Companion" },
       {
         property: "og:description",
-        content: "Voice-powered dhikr counter — recite and let the app count.",
+        content: "Voice dhikr counter with targets, session timer, history and streaks.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Home,
 });
+
+/** Spacing between visual increments when several repetitions arrive together. */
+const DRIP_MS = 260;
 
 function Home() {
   const navigate = useNavigate();
@@ -45,9 +71,20 @@ function Home() {
   const [interim, setInterim] = useState("");
   const [lastMatchAt, setLastMatchAt] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false);
   const [supported, setSupported] = useState(true);
+
+  const [target, setTarget] = useState<number | null>(33);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+
+  const [celebrating, setCelebrating] = useState(false);
+  const [summary, setSummary] = useState<DhikrSession | null>(null);
+  const [sound, setSound] = useState(true);
+  const [streaks, setStreaks] = useState({ current: 0, longest: 0 });
 
   const selected = getDhikr(selectedId) ?? DHIKR_LIST[0];
   const profile = useMemo(() => loadProfile(selected.id), [selected.id, lastMatchAt]);
@@ -57,24 +94,68 @@ function Home() {
   type DebugEntry = { at: number; text: string; ok: boolean; reason: string; score: number };
   const [debugLog, setDebugLog] = useState<DebugEntry[]>([]);
 
-  const lastCountAtRef = useRef(0);
-
   useEffect(() => {
     setDebugMode(localStorage.getItem("dhikr.debug") === "1");
-  }, []);
-
-
-  useEffect(() => {
     setSupported(isSpeechRecognitionSupported());
+    setSound(soundEnabled());
+    setStreaks(computeStreaks());
   }, []);
 
   useEffect(() => {
     localStorage.setItem("dhikr.selected", selectedId);
   }, [selectedId]);
 
-  // References = canonical spellings + calibration transcripts that were
-  // verified to actually be this dhikr. Calibration widens accepted spellings,
-  // it never lets a different phrase count.
+  // ---------------- session timer ----------------
+  useEffect(() => {
+    if (!timerRunning || startedAt === null) return;
+    setElapsed(Date.now() - startedAt);
+    const id = window.setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    return () => window.clearInterval(id);
+  }, [timerRunning, startedAt]);
+
+  const beginSession = useCallback(() => {
+    setStartedAt((s) => s ?? Date.now());
+    setTimerRunning(true);
+  }, []);
+
+  // ---------------- incremental (real-time) counting ----------------
+  // Recognised repetitions are queued and applied ONE at a time so the display
+  // walks 0 → 1 → 2 → 3 instead of jumping straight to 3.
+  const queueRef = useRef(0);
+  const drainRef = useRef<number | null>(null);
+
+  const applyOne = useCallback(() => {
+    setCount((c) => c + 1);
+    setLastMatchAt(Date.now());
+    beginSession();
+  }, [beginSession]);
+
+  const drain = useCallback(() => {
+    if (queueRef.current <= 0) {
+      drainRef.current = null;
+      return;
+    }
+    queueRef.current -= 1;
+    applyOne();
+    drainRef.current = window.setTimeout(drain, DRIP_MS);
+  }, [applyOne]);
+
+  const enqueue = useCallback(
+    (n: number) => {
+      queueRef.current += n;
+      if (drainRef.current === null) drain();
+    },
+    [drain],
+  );
+
+  useEffect(
+    () => () => {
+      if (drainRef.current !== null) window.clearTimeout(drainRef.current);
+    },
+    [],
+  );
+
+  // ---------------- recognition ----------------
   const references = useMemo(() => {
     const canonical = prepareReferences(selected.canonical);
     const samples = (profile?.samples ?? [])
@@ -88,11 +169,18 @@ function Home() {
   const handleFinal = useCallback(
     ({ transcript, at }: { transcript: string; at: number }) => {
       setInterim("");
-      // Duplicate guard: the engine can re-emit the same final utterance
       const norm = normalize(transcript);
-      if (norm && norm === lastTranscriptRef.current.text && at - lastTranscriptRef.current.at < 1500) {
+      // Cooldown / duplicate guard: engines can re-emit the same final utterance.
+      if (
+        norm &&
+        norm === lastTranscriptRef.current.text &&
+        at - lastTranscriptRef.current.at < 1500
+      ) {
         setDebugLog((l) =>
-          [{ at, text: transcript, ok: false, reason: describeReason("duplicate"), score: 1 }, ...l].slice(0, 12),
+          [
+            { at, text: transcript, ok: false, reason: describeReason("duplicate"), score: 1 },
+            ...l,
+          ].slice(0, 12),
         );
         return;
       }
@@ -105,23 +193,18 @@ function Home() {
             at,
             text: transcript,
             ok: result.accepted,
-            reason: result.accepted
-              ? `Accepted ×${result.count}`
-              : describeReason(result.reason),
+            reason: result.accepted ? `Accepted ×${result.count}` : describeReason(result.reason),
             score: result.bestScore,
           },
           ...l,
         ].slice(0, 12),
       );
       if (!result.accepted) return;
-      setCount((c) => c + result.count);
-      setLastMatchAt(at);
-      setShowFeedback(true);
+      enqueue(result.count);
     },
-    [references],
+    [references, enqueue],
   );
 
-  // Interim results are shown only — never counted (prevents double counting).
   const handleInterim = useCallback((text: string) => setInterim(text), []);
 
   const handleError = useCallback((err: string) => {
@@ -143,7 +226,6 @@ function Home() {
     onError: handleError,
   });
 
-
   const toggleListen = () => {
     setErrorMsg(null);
     if (!supported) return;
@@ -151,44 +233,115 @@ function Home() {
       navigate({ to: "/calibrate/$id", params: { id: selected.id } });
       return;
     }
-    if (listening) stop();
-    else start();
+    if (listening) {
+      stop();
+      setTimerRunning(false);
+    } else {
+      start();
+      beginSession();
+    }
   };
 
-  const reset = () => {
+  // ---------------- target completion ----------------
+  const celebratedForRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!target || count < target) return;
+    if (celebratedForRef.current === target) return;
+    celebratedForRef.current = target;
+    setCelebrating(true);
+    setTimerRunning(false);
+    playCompletionCue();
+  }, [count, target]);
+
+  useEffect(() => {
+    if (target !== celebratedForRef.current) celebratedForRef.current = null;
+  }, [target]);
+
+  const buildSession = (): DhikrSession => {
+    const now = Date.now();
+    const began = startedAt ?? now;
+    return {
+      id: `${began}-${Math.random().toString(36).slice(2, 8)}`,
+      dhikrId: selected.id,
+      dhikrTransliteration: selected.transliteration,
+      count,
+      target,
+      completed: !!target && count >= target,
+      durationMs: elapsed || now - began,
+      startedAt: began,
+      endedAt: now,
+    };
+  };
+
+  const clearSessionState = () => {
     setCount(0);
-    setConfirmReset(false);
-    setShowFeedback(false);
+    queueRef.current = 0;
+    if (drainRef.current !== null) {
+      window.clearTimeout(drainRef.current);
+      drainRef.current = null;
+    }
+    setStartedAt(null);
+    setElapsed(0);
+    setTimerRunning(false);
+    setLastMatchAt(null);
+    celebratedForRef.current = null;
+    setCelebrating(false);
   };
 
-  const sendFeedback = (kind: "correct" | "missed" | "wrong") => {
-    recordFeedback({ dhikrId: selected.id, kind, at: Date.now() });
-    if (kind === "missed") setCount((c) => c + 1);
-    if (kind === "wrong") setCount((c) => Math.max(0, c - 1));
-    setShowFeedback(false);
+  const requestReset = () => {
+    if (count === 0) {
+      clearSessionState();
+      return;
+    }
+    setTimerRunning(false);
+    setSummary(buildSession());
+  };
+
+  const finishSession = (save: boolean) => {
+    if (save && summary) {
+      saveSession(summary);
+      setStreaks(computeStreaks());
+    }
+    setSummary(null);
+    clearSessionState();
   };
 
   // Reset counter when switching dhikr
   useEffect(() => {
-    setCount(0);
-    lastCountAtRef.current = 0;
+    clearSessionState();
     if (listening) stop();
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const progress = target ? Math.min(100, (count / target) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="px-5 pt-6 pb-2 flex items-center justify-between max-w-md mx-auto w-full">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Dhikr</p>
-          <h1 className="text-2xl font-semibold text-foreground">Counter</h1>
+          <h1 className="text-2xl font-semibold text-foreground">Companion</h1>
         </div>
-        <Link
-          to="/settings"
-          className="rounded-full p-2.5 hover:bg-secondary transition-colors"
-          aria-label="Settings"
-        >
-          <SettingsIcon className="w-5 h-5 text-muted-foreground" />
-        </Link>
+        <div className="flex items-center gap-1">
+          {streaks.current > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gold/20 px-2.5 py-1 text-xs font-medium text-foreground">
+              <Flame className="w-3.5 h-3.5" /> {streaks.current}d
+            </span>
+          )}
+          <Link
+            to="/history"
+            className="rounded-full p-2.5 hover:bg-secondary transition-colors"
+            aria-label="Session history"
+          >
+            <History className="w-5 h-5 text-muted-foreground" />
+          </Link>
+          <Link
+            to="/settings"
+            className="rounded-full p-2.5 hover:bg-secondary transition-colors"
+            aria-label="Settings"
+          >
+            <SettingsIcon className="w-5 h-5 text-muted-foreground" />
+          </Link>
+        </div>
       </header>
 
       <main className="flex-1 max-w-md mx-auto w-full px-5 pb-8 flex flex-col gap-6">
@@ -208,10 +361,7 @@ function Home() {
                     : "border-border bg-card hover:border-primary/40"
                 }`}
               >
-                <p
-                  className="font-arabic text-xl leading-tight text-foreground"
-                  lang="ar"
-                >
+                <p className="font-arabic text-xl leading-tight text-foreground" lang="ar">
                   {d.arabic}
                 </p>
                 <p className="mt-1 text-sm font-medium text-foreground">{d.transliteration}</p>
@@ -227,12 +377,15 @@ function Home() {
           })}
         </div>
 
-        {/* Selected dhikr display */}
+        {/* Selected dhikr display + meaning */}
         <div className="rounded-3xl bg-card border border-border p-6 text-center">
           <p className="font-arabic text-4xl leading-relaxed text-primary" lang="ar">
             {selected.arabic}
           </p>
           <p className="mt-2 text-base text-muted-foreground">{selected.transliteration}</p>
+          <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground/80 italic">
+            “{selected.meaning}”
+          </p>
           {!calibrated && (
             <Link
               to="/calibrate/$id"
@@ -244,16 +397,104 @@ function Home() {
           )}
         </div>
 
+        {/* Target selection */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Target</p>
+            <button
+              onClick={() => setTarget(null)}
+              className={`text-xs ${target === null ? "text-primary font-medium" : "text-muted-foreground"}`}
+            >
+              No target
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {TARGET_PRESETS.map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTarget(t);
+                  setCustomOpen(false);
+                }}
+                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                  target === t
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-secondary-foreground"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+            <button
+              onClick={() => setCustomOpen((o) => !o)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                customOpen ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+              }`}
+            >
+              Custom
+            </button>
+          </div>
+          {customOpen && (
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const n = parseInt(customValue, 10);
+                if (Number.isFinite(n) && n > 0) {
+                  setTarget(n);
+                  setCustomOpen(false);
+                }
+              }}
+            >
+              <input
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+                placeholder="e.g. 500"
+                aria-label="Custom target"
+                className="flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                className="rounded-xl bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
+              >
+                Set
+              </button>
+            </form>
+          )}
+        </div>
+
         {/* Counter */}
-        <div className="flex-1 flex flex-col items-center justify-center py-6">
+        <div className="flex-1 flex flex-col items-center justify-center py-4">
           <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Count</p>
           <div
-            className={`text-[7rem] leading-none font-bold text-foreground tabular-nums transition-transform ${
+            className={`text-[6.5rem] leading-none font-bold text-foreground tabular-nums transition-transform duration-200 ${
               lastMatchAt && Date.now() - lastMatchAt < 400 ? "scale-105" : "scale-100"
             }`}
             style={{ fontVariantNumeric: "tabular-nums" }}
           >
             {count}
+          </div>
+          {target !== null && (
+            <>
+              <p className="mt-1 text-sm text-muted-foreground tabular-nums">
+                {count} / {target}
+              </p>
+              <div className="mt-2 h-1.5 w-40 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </>
+          )}
+          <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+            <span>
+              Session Time{" "}
+              <span className="tabular-nums text-foreground">{formatDuration(elapsed)}</span>
+            </span>
           </div>
           <div className="h-6 mt-2 text-sm text-muted-foreground">
             {listening ? (
@@ -282,72 +523,61 @@ function Home() {
 
         {/* Controls */}
         <div className="flex flex-col items-center gap-4">
-          <button
-            onClick={toggleListen}
-            disabled={!supported && !!supported}
-            className={`w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground shadow-lg transition-all active:scale-95 ${
-              listening ? "bg-primary mic-pulse" : "bg-primary"
-            }`}
-            aria-label={listening ? "Stop listening" : "Start listening"}
-          >
-            {listening ? <MicOff className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
-          </button>
+          <div className="flex items-center gap-5">
+            <button
+              onClick={() => setCount((c) => Math.max(0, c - 1))}
+              className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
+              aria-label="Subtract one"
+            >
+              <Minus className="w-5 h-5" />
+            </button>
+            <button
+              onClick={toggleListen}
+              className={`w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground shadow-lg transition-all active:scale-95 bg-primary ${
+                listening ? "mic-pulse" : ""
+              }`}
+              aria-label={listening ? "Stop listening" : "Start listening"}
+            >
+              {listening ? <MicOff className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
+            </button>
+            <button
+              onClick={() => {
+                setCount((c) => c + 1);
+                setLastMatchAt(Date.now());
+                beginSession();
+              }}
+              className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
+              aria-label="Add one"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
           <p className="text-sm font-medium text-foreground">
             {listening ? "Stop Listening" : "Start Listening"}
           </p>
 
-          <div className="grid grid-cols-2 gap-3 w-full">
-            <button
-              onClick={() => {
-                setCount((c) => c + 1);
-                lastCountAtRef.current = Date.now();
-              }}
-              className="rounded-xl bg-secondary text-secondary-foreground py-3 font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition"
-            >
-              <Plus className="w-4 h-4" /> +1
-            </button>
-            <button
-              onClick={() => (confirmReset ? reset() : setConfirmReset(true))}
-              className={`rounded-xl py-3 font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition ${
-                confirmReset
-                  ? "bg-destructive text-destructive-foreground"
-                  : "bg-secondary text-secondary-foreground"
-              }`}
-            >
-              <RotateCcw className="w-4 h-4" /> {confirmReset ? "Tap to confirm" : "Reset"}
-            </button>
-          </div>
+          <button
+            onClick={requestReset}
+            className="w-full rounded-xl bg-secondary text-secondary-foreground py-3 font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition"
+          >
+            <RotateCcw className="w-4 h-4" /> End Session
+          </button>
         </div>
 
-        {/* Feedback */}
-        {showFeedback && lastMatchAt && (
-          <div className="rounded-2xl border border-border bg-card p-3 flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground pl-1">How was that?</span>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => sendFeedback("correct")}
-                className="rounded-lg bg-primary/10 text-primary px-3 py-1.5 text-xs font-medium flex items-center gap-1"
-              >
-                <Check className="w-3.5 h-3.5" /> Correct
-              </button>
-              <button
-                onClick={() => sendFeedback("missed")}
-                className="rounded-lg bg-secondary text-secondary-foreground px-3 py-1.5 text-xs font-medium"
-              >
-                Missed
-              </button>
-              <button
-                onClick={() => sendFeedback("wrong")}
-                className="rounded-lg bg-secondary text-secondary-foreground px-3 py-1.5 text-xs font-medium flex items-center gap-1"
-              >
-                <X className="w-3.5 h-3.5" /> Wrong
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Debug mode */}
-        <div className="pt-2">
+        <div className="pt-2 space-y-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={sound}
+              onChange={(e) => {
+                setSound(e.target.checked);
+                setSoundEnabled(e.target.checked);
+              }}
+              className="accent-primary"
+            />
+            Completion sound
+          </label>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -395,6 +625,118 @@ function Home() {
         </div>
       </main>
 
+      {/* Completion celebration */}
+      {celebrating && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/30 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-card border border-border p-6 text-center shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="mx-auto mb-3 w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-2xl">
+              ✅
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">Alhamdulillah!</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              You completed your dhikr target of {target}.
+            </p>
+            <p className="mt-3 font-arabic text-2xl text-primary" lang="ar">
+              {selected.arabic}
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setCelebrating(false);
+                  setTimerRunning(true);
+                }}
+                className="rounded-xl bg-secondary text-secondary-foreground py-3 font-medium"
+              >
+                Continue counting
+              </button>
+              <button
+                onClick={() => {
+                  setCelebrating(false);
+                  setSummary(buildSession());
+                }}
+                className="rounded-xl bg-primary text-primary-foreground py-3 font-medium"
+              >
+                Start a new session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session summary before reset */}
+      {summary && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/30 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-card border border-border p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <h2 className="text-lg font-semibold text-foreground">Today's Session</h2>
+            <dl className="mt-4 space-y-2.5 text-sm">
+              <Row label="Dhikr" value={summary.dhikrTransliteration} />
+              <Row
+                label="Completed"
+                value={
+                  summary.target
+                    ? `${summary.count} / ${summary.target}${summary.completed ? " ✓" : ""}`
+                    : `${summary.count}`
+                }
+              />
+              <Row label="Duration" value={humanDuration(summary.durationMs)} />
+              <Row
+                label="Average pace"
+                value={`${averagePace(summary.count, summary.durationMs)} per minute`}
+              />
+              <Row
+                label="Date"
+                value={new Date(summary.endedAt).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              />
+              <Row
+                label="Time"
+                value={new Date(summary.endedAt).toLocaleTimeString(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              />
+            </dl>
+            <p className="mt-5 text-sm text-muted-foreground">
+              Would you like to save this session before starting a new one?
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                onClick={() => finishSession(true)}
+                className="rounded-xl bg-primary text-primary-foreground py-3 font-medium"
+              >
+                Save &amp; start new session
+              </button>
+              <button
+                onClick={() => finishSession(false)}
+                className="rounded-xl bg-secondary text-secondary-foreground py-3 font-medium"
+              >
+                Discard session
+              </button>
+              <button
+                onClick={() => {
+                  setSummary(null);
+                  setTimerRunning(true);
+                }}
+                className="py-2 text-sm text-muted-foreground"
+              >
+                Keep counting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium text-foreground text-right">{value}</dd>
     </div>
   );
 }
