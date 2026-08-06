@@ -2,6 +2,8 @@ export type Dhikr = {
   id: string;
   arabic: string;
   transliteration: string;
+  /** English meaning shown under the selected dhikr */
+  meaning: string;
   /** canonical phrase forms for matching (normalized without diacritics) */
   canonical: string[];
 };
