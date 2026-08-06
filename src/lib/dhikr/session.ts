@@ -117,8 +117,9 @@ export function humanDuration(ms: number): string {
 }
 
 export function averagePace(count: number, durationMs: number): number {
+  // Very short sessions produce meaningless rates.
+  if (durationMs < 5000 || count <= 0) return 0;
   const minutes = durationMs / 60000;
-  if (minutes <= 0) return 0;
   return Math.round((count / minutes) * 10) / 10;
 }
 
