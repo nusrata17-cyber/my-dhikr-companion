@@ -30,7 +30,7 @@ export const Route = createFileRoute("/history")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: HistoryPage;
+  component: HistoryPage,
 });
 
 function HistoryPage() {
