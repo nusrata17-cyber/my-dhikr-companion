@@ -124,6 +124,35 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function Footer() {
+  return (
+    <footer className="mx-auto w-full max-w-md px-5 pt-20 pb-10 text-center">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Made with <span aria-hidden="true">❤️</span> by{" "}
+        <a
+          href="https://www.linkedin.com/in/ahmednusrat/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
+        >
+          Ahmed Nusrat
+        </a>
+      </p>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+        Inspired by{" "}
+        <a
+          href="https://priyalvasaiwala.github.io/chant-counter/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
+        >
+          Chant Counter
+        </a>
+      </p>
+    </footer>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
@@ -131,6 +160,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <Footer />
     </QueryClientProvider>
   );
 }
