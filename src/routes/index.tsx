@@ -523,14 +523,17 @@ function Home() {
 
         {/* Controls */}
         <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center gap-5">
-            <button
-              onClick={() => setCount((c) => Math.max(0, c - 1))}
-              className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
-              aria-label="Subtract one"
-            >
-              <Minus className="w-5 h-5" />
-            </button>
+          <div className="flex items-start gap-5">
+            <div className="flex flex-col items-center gap-1">
+              <button
+                onClick={() => setCount((c) => Math.max(0, c - 1))}
+                className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
+                aria-label="Subtract one"
+              >
+                <Minus className="w-5 h-5" />
+              </button>
+              <span className="text-[11px] text-muted-foreground">Undo 1</span>
+            </div>
             <button
               onClick={toggleListen}
               className={`w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground shadow-lg transition-all active:scale-95 bg-primary ${
@@ -540,17 +543,20 @@ function Home() {
             >
               {listening ? <MicOff className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
             </button>
-            <button
-              onClick={() => {
-                setCount((c) => c + 1);
-                setLastMatchAt(Date.now());
-                beginSession();
-              }}
-              className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
-              aria-label="Add one"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
+            <div className="flex flex-col items-center gap-1">
+              <button
+                onClick={() => {
+                  setCount((c) => c + 1);
+                  setLastMatchAt(Date.now());
+                  beginSession();
+                }}
+                className="w-12 h-12 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center active:scale-95 transition"
+                aria-label="Add one"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+              <span className="text-[11px] text-muted-foreground">Add 1</span>
+            </div>
           </div>
           <p className="text-sm font-medium text-foreground">
             {listening ? "Stop Listening" : "Start Listening"}
