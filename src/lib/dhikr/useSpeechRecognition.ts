@@ -54,10 +54,19 @@ type Options = {
 
 export function useSpeechRecognition(opts: Options = {}) {
   const { lang = "ar-SA", onFinal, onInterim, onError } = opts;
+  // `listening` reflects the USER's intent (counting mode), not the engine's
+  // internal session. Browsers end a recognition session after each utterance
+  // or a silence timeout, so engine sessions are restarted transparently.
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const shouldRunRef = useRef(false);
+  const startingRef = useRef(false);
+  const restartTimerRef = useRef<number | null>(null);
+  // Guard against a tight restart loop when the mic/browser is genuinely broken.
+  const failStreakRef = useRef(0);
+  const langRef = useRef(lang);
+  langRef.current = lang;
   const cbRef = useRef({ onFinal, onInterim, onError });
   cbRef.current = { onFinal, onInterim, onError };
 
@@ -65,20 +74,37 @@ export function useSpeechRecognition(opts: Options = {}) {
     setSupported(isSpeechRecognitionSupported());
   }, []);
 
-  const start = useCallback(() => {
+  const spawn = useCallback(() => {
+    if (!shouldRunRef.current) return;
+    if (recRef.current || startingRef.current) return;
     const Ctor = getRecognitionCtor();
     if (!Ctor) {
       setSupported(false);
+      shouldRunRef.current = false;
+      setListening(false);
       return;
     }
-    if (recRef.current) return;
     const rec = new Ctor();
-    rec.lang = lang;
+    rec.lang = langRef.current;
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
-    rec.onstart = () => setListening(true);
+
+    const scheduleRestart = (delay: number) => {
+      if (!shouldRunRef.current) return;
+      if (restartTimerRef.current !== null) return;
+      restartTimerRef.current = window.setTimeout(() => {
+        restartTimerRef.current = null;
+        spawn();
+      }, delay);
+    };
+
+    rec.onstart = () => {
+      startingRef.current = false;
+      failStreakRef.current = 0;
+    };
     rec.onresult = (event) => {
+      failStreakRef.current = 0;
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
@@ -92,35 +118,77 @@ export function useSpeechRecognition(opts: Options = {}) {
       if (interim) cbRef.current.onInterim?.(interim);
     };
     rec.onerror = (e) => {
-      if (e.error !== "no-speech" && e.error !== "aborted") {
-        cbRef.current.onError?.(e.error);
+      const err = e.error;
+      // Silence and self-inflicted aborts are normal during long sessions:
+      // never surface them, never leave counting mode.
+      if (err === "no-speech" || err === "aborted") return;
+      if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
+        // Unrecoverable without user action — leave counting mode.
+        shouldRunRef.current = false;
+        setListening(false);
+        cbRef.current.onError?.(err);
+        return;
       }
+      // network / unknown: recoverable, retry with backoff via onend.
+      failStreakRef.current += 1;
+      cbRef.current.onError?.(err);
     };
     rec.onend = () => {
-      setListening(false);
-      recRef.current = null;
-      // Auto-restart while user hasn't stopped (browsers time out ~60s)
-      if (shouldRunRef.current) {
-        setTimeout(() => {
-          if (shouldRunRef.current) start();
-        }, 150);
+      startingRef.current = false;
+      if (recRef.current === rec) recRef.current = null;
+      if (!shouldRunRef.current) {
+        setListening(false);
+        return;
       }
+      if (failStreakRef.current >= 5) {
+        shouldRunRef.current = false;
+        setListening(false);
+        cbRef.current.onError?.("restart-failed");
+        return;
+      }
+      // Backoff only grows while sessions keep failing; a normal end restarts fast.
+      scheduleRestart(failStreakRef.current > 0 ? 400 * failStreakRef.current : 120);
     };
+
     recRef.current = rec;
-    shouldRunRef.current = true;
+    startingRef.current = true;
     try {
       rec.start();
     } catch {
-      /* already started */
+      // "already started" — drop this instance and retry shortly.
+      startingRef.current = false;
+      recRef.current = null;
+      failStreakRef.current += 1;
+      scheduleRestart(300);
     }
-  }, [lang]);
+  }, []);
+
+  const start = useCallback(() => {
+    if (!getRecognitionCtor()) {
+      setSupported(false);
+      return;
+    }
+    shouldRunRef.current = true;
+    failStreakRef.current = 0;
+    setListening(true);
+    spawn();
+  }, [spawn]);
 
   const stop = useCallback(() => {
     shouldRunRef.current = false;
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
     const rec = recRef.current;
+    recRef.current = null;
+    startingRef.current = false;
     if (rec) {
       try {
-        rec.stop();
+        rec.onend = null;
+        rec.onresult = null;
+        rec.onerror = null;
+        rec.abort();
       } catch {
         /* ignore */
       }
@@ -128,10 +196,20 @@ export function useSpeechRecognition(opts: Options = {}) {
     setListening(false);
   }, []);
 
-  useEffect(() => () => {
-    shouldRunRef.current = false;
-    recRef.current?.abort?.();
-  }, []);
+  useEffect(
+    () => () => {
+      shouldRunRef.current = false;
+      if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
+      try {
+        recRef.current?.abort?.();
+      } catch {
+        /* ignore */
+      }
+      recRef.current = null;
+    },
+    [],
+  );
 
   return { listening, supported, start, stop };
 }
+
