@@ -151,12 +151,21 @@ function Footer() {
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         Inspired by{" "}
         <a
+          href="https://www.linkedin.com/in/priyal-vasaiwala/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
+        >
+          Priyal Vasaiwala
+        </a>
+        ’s{" "}
+        <a
           href="https://priyalvasaiwala.github.io/chant-counter/"
           target="_blank"
           rel="noopener noreferrer"
           className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
         >
-          Priyal Vasaiwala's Chant Counter
+          Chant Counter
         </a>
       </p>
     </footer>
