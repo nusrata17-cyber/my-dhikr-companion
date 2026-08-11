@@ -87,8 +87,14 @@ function Home() {
   const [streaks, setStreaks] = useState({ current: 0, longest: 0 });
 
   const selected = getDhikr(selectedId) ?? DHIKR_LIST[0];
-  const profile = useMemo(() => loadProfile(selected.id), [selected.id, lastMatchAt]);
+  // Profiles live in localStorage, which does not exist during SSR — load them
+  // after hydration (and whenever the dhikr changes) instead of memoising null.
+  const [profile, setProfile] = useState<ReturnType<typeof loadProfile>>(null);
+  useEffect(() => {
+    setProfile(loadProfile(selected.id));
+  }, [selected.id]);
   const calibrated = !!profile && profile.samples.length >= 5;
+
 
   const [debugMode, setDebugMode] = useState(false);
   type DebugEntry = { at: number; text: string; ok: boolean; reason: string; score: number };
