@@ -126,7 +126,17 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function Footer() {
   return (
-    <footer className="mx-auto w-full max-w-md px-5 pt-20 pb-10 text-center">
+    <footer className="mx-auto w-full max-w-md px-5 pt-10 pb-10 text-center">
+      <div className="pb-10">
+        <a
+          href="https://tally.so/r/EkVlaN"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/50 px-4 py-1.5 text-xs font-medium text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span aria-hidden="true">🤍</span> Give Feedback
+        </a>
+      </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         Made with <span aria-hidden="true">❤️</span> by{" "}
         <a
@@ -135,7 +145,7 @@ function Footer() {
           rel="noopener noreferrer"
           className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
         >
-          Ahmed Nusrat
+          Nusrat Ahmed
         </a>
       </p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
@@ -146,7 +156,7 @@ function Footer() {
           rel="noopener noreferrer"
           className="font-medium text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
         >
-          Chant Counter
+          Priyal Vasaiwala's Chant Counter
         </a>
       </p>
     </footer>
