@@ -209,15 +209,20 @@ function Home() {
 
   const handleError = useCallback((err: string) => {
     if (err === "not-allowed" || err === "service-not-allowed") {
-      setErrorMsg("Microphone permission was denied. You can still use +1.");
+      setErrorMsg(
+        "Microphone permission was denied. Allow mic access in your browser settings, then start again. You can still use +1.",
+      );
     } else if (err === "audio-capture") {
-      setErrorMsg("No microphone was found on this device.");
+      setErrorMsg("No microphone was found on this device. You can still count with +1.");
     } else if (err === "network") {
-      setErrorMsg("Speech recognition needs an internet connection.");
+      setErrorMsg("Speech recognition needs an internet connection — retrying…");
+    } else if (err === "restart-failed") {
+      setErrorMsg("Voice recognition kept stopping. Please tap the mic to start listening again.");
     } else {
       setErrorMsg("Voice recognition error: " + err);
     }
   }, []);
+
 
   const { listening, start, stop } = useSpeechRecognition({
     lang: "ar-SA",
