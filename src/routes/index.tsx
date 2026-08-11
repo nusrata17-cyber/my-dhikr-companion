@@ -87,8 +87,14 @@ function Home() {
   const [streaks, setStreaks] = useState({ current: 0, longest: 0 });
 
   const selected = getDhikr(selectedId) ?? DHIKR_LIST[0];
-  const profile = useMemo(() => loadProfile(selected.id), [selected.id, lastMatchAt]);
+  // Profiles live in localStorage, which does not exist during SSR — load them
+  // after hydration (and whenever the dhikr changes) instead of memoising null.
+  const [profile, setProfile] = useState<ReturnType<typeof loadProfile>>(null);
+  useEffect(() => {
+    setProfile(loadProfile(selected.id));
+  }, [selected.id]);
   const calibrated = !!profile && profile.samples.length >= 5;
+
 
   const [debugMode, setDebugMode] = useState(false);
   type DebugEntry = { at: number; text: string; ok: boolean; reason: string; score: number };
@@ -209,15 +215,20 @@ function Home() {
 
   const handleError = useCallback((err: string) => {
     if (err === "not-allowed" || err === "service-not-allowed") {
-      setErrorMsg("Microphone permission was denied. You can still use +1.");
+      setErrorMsg(
+        "Microphone permission was denied. Allow mic access in your browser settings, then start again. You can still use +1.",
+      );
     } else if (err === "audio-capture") {
-      setErrorMsg("No microphone was found on this device.");
+      setErrorMsg("No microphone was found on this device. You can still count with +1.");
     } else if (err === "network") {
-      setErrorMsg("Speech recognition needs an internet connection.");
+      setErrorMsg("Speech recognition needs an internet connection — retrying…");
+    } else if (err === "restart-failed") {
+      setErrorMsg("Voice recognition kept stopping. Please tap the mic to start listening again.");
     } else {
       setErrorMsg("Voice recognition error: " + err);
     }
   }, []);
+
 
   const { listening, start, stop } = useSpeechRecognition({
     lang: "ar-SA",
