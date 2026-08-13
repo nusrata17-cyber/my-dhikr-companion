@@ -113,6 +113,22 @@ export function scoreAgainst(phrase: string, refs: PreparedRef[]): number {
 }
 
 export const MATCH_THRESHOLD = 0.84;
+/** Longer references need a slightly softer threshold (more room for slips). */
+export const LONG_MATCH_THRESHOLD = 0.78;
+
+/** Longest reference skeleton length. */
+export function refLength(refs: PreparedRef[]): number {
+  return refs.reduce((m, r) => Math.max(m, r.skeleton.length), 0);
+}
+
+/** True when references describe a long recitation (salawat, dua, …). */
+export function isLongPhrase(refs: PreparedRef[]): boolean {
+  return refLength(refs) > 26 || refs.some((r) => r.words >= 4);
+}
+
+export function thresholdFor(refs: PreparedRef[]): number {
+  return isLongPhrase(refs) ? LONG_MATCH_THRESHOLD : MATCH_THRESHOLD;
+}
 
 /**
  * Count complete, non-overlapping repetitions of the dhikr inside a FINAL
