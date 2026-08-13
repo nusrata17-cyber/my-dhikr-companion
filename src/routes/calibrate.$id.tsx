@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDhikr, DHIKR_LIST } from "@/lib/dhikr/data";
+import { resolveDhikr } from "@/lib/dhikr/custom";
 import { bestSimilarity } from "@/lib/dhikr/normalize";
 import { loadProfile, saveProfile, type VoiceSample } from "@/lib/dhikr/storage";
 import {
@@ -33,7 +34,12 @@ const MIN_SIMILARITY = 0.5;
 function Calibrate() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const dhikr = getDhikr(id) ?? DHIKR_LIST[0];
+  // Custom dhikr live in localStorage, so resolve after hydration.
+  const [dhikr, setDhikr] = useState(() => getDhikr(id) ?? DHIKR_LIST[0]);
+  useEffect(() => {
+    const found = resolveDhikr(id);
+    if (found) setDhikr(found);
+  }, [id]);
 
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [status, setStatus] = useState<"idle" | "listening" | "got" | "retry" | "done">("idle");
@@ -50,8 +56,10 @@ function Calibrate() {
   const acceptSample = useCallback(
     (transcript: string) => {
       if (capturedThisRoundRef.current) return;
+      // Longer recitations naturally drift more, so accept a looser match.
+      const longPhrase = references.some((r) => r.trim().split(/\s+/).length >= 4);
       const sim = bestSimilarity(transcript, references);
-      if (sim < MIN_SIMILARITY) {
+      if (sim < (longPhrase ? 0.35 : MIN_SIMILARITY)) {
         setStatus("retry");
         setFeedback("Please try again");
         return;
