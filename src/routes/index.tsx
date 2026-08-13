@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DHIKR_LIST, getDhikr } from "@/lib/dhikr/data";
+import { DHIKR_LIST, getDhikr, type Dhikr } from "@/lib/dhikr/data";
+import { loadCustomDhikr, type CustomDhikr } from "@/lib/dhikr/custom";
 import { loadProfile } from "@/lib/dhikr/storage";
 import { normalize } from "@/lib/dhikr/normalize";
 import {
@@ -8,6 +9,8 @@ import {
   matchTranscript,
   prepareReferences,
   scoreAgainst,
+  isLongPhrase,
+  thresholdFor,
 } from "@/lib/dhikr/matcher";
 import {
   TARGET_PRESETS,
@@ -33,6 +36,7 @@ import {
   MicOff,
   Minus,
   Plus,
+  Sparkles,
   RotateCcw,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -86,7 +90,11 @@ function Home() {
   const [sound, setSound] = useState(true);
   const [streaks, setStreaks] = useState({ current: 0, longest: 0 });
 
-  const selected = getDhikr(selectedId) ?? DHIKR_LIST[0];
+  // Custom dhikr live in localStorage — load after hydration.
+  const [customList, setCustomList] = useState<CustomDhikr[]>([]);
+  useEffect(() => setCustomList(loadCustomDhikr()), []);
+  const selected: Dhikr =
+    getDhikr(selectedId) ?? customList.find((d) => d.id === selectedId) ?? DHIKR_LIST[0];
   // Profiles live in localStorage, which does not exist during SSR — load them
   // after hydration (and whenever the dhikr changes) instead of memoising null.
   const [profile, setProfile] = useState<ReturnType<typeof loadProfile>>(null);
@@ -170,7 +178,13 @@ function Home() {
     return prepareReferences([...selected.canonical, ...samples]);
   }, [selected, profile]);
 
+  const threshold = useMemo(() => thresholdFor(references), [references]);
+  const longPhrase = useMemo(() => isLongPhrase(references), [references]);
+
   const lastTranscriptRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+  // Long recitations often arrive as several final results; join them so one
+  // complete recitation counts exactly once (and partials count zero).
+  const bufferRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
 
   const handleFinal = useCallback(
     ({ transcript, at }: { transcript: string; at: number }) => {
@@ -192,12 +206,20 @@ function Home() {
       }
       lastTranscriptRef.current = { text: norm, at };
 
-      const result = matchTranscript(transcript, references);
+      let subject = transcript;
+      if (longPhrase) {
+        const fresh = at - bufferRef.current.at < 25000 ? bufferRef.current.text : "";
+        subject = (fresh + " " + transcript).trim();
+        bufferRef.current = { text: subject, at };
+      }
+
+      const result = matchTranscript(subject, references, threshold);
+      if (longPhrase && result.accepted) bufferRef.current = { text: "", at };
       setDebugLog((l) =>
         [
           {
             at,
-            text: transcript,
+            text: subject,
             ok: result.accepted,
             reason: result.accepted ? `Accepted ×${result.count}` : describeReason(result.reason),
             score: result.bestScore,
@@ -208,7 +230,7 @@ function Home() {
       if (!result.accepted) return;
       enqueue(result.count);
     },
-    [references, enqueue],
+    [references, enqueue, threshold, longPhrase],
   );
 
   const handleInterim = useCallback((text: string) => setInterim(text), []);
@@ -394,9 +416,11 @@ function Home() {
             {selected.arabic}
           </p>
           <p className="mt-2 text-base text-muted-foreground">{selected.transliteration}</p>
-          <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground/80 italic">
-            “{selected.meaning}”
-          </p>
+          {selected.meaning && (
+            <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground/80 italic">
+              “{selected.meaning}”
+            </p>
+          )}
           {!calibrated && (
             <Link
               to="/calibrate/$id"
