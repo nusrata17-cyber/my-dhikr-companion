@@ -30,7 +30,7 @@ export const Route = createFileRoute("/custom")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: CustomDhikrPage;
+  component: CustomDhikrPage,
 });
 
 type Step = "list" | "choose" | "type" | "record" | "review";
