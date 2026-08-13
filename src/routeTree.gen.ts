@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as CustomRouteImport } from './routes/custom'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CalibrateIdRouteImport } from './routes/calibrate.$id'
 
@@ -22,6 +23,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomRoute = CustomRouteImport.update({
+  id: '/custom',
+  path: '/custom',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,12 +43,14 @@ const CalibrateIdRoute = CalibrateIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/custom': typeof CustomRoute
   '/history': typeof HistoryRoute
   '/settings': typeof SettingsRoute
   '/calibrate/$id': typeof CalibrateIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/custom': typeof CustomRoute
   '/history': typeof HistoryRoute
   '/settings': typeof SettingsRoute
   '/calibrate/$id': typeof CalibrateIdRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/custom': typeof CustomRoute
   '/history': typeof HistoryRoute
   '/settings': typeof SettingsRoute
   '/calibrate/$id': typeof CalibrateIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/history' | '/settings' | '/calibrate/$id'
+  fullPaths: '/' | '/custom' | '/history' | '/settings' | '/calibrate/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/history' | '/settings' | '/calibrate/$id'
-  id: '__root__' | '/' | '/history' | '/settings' | '/calibrate/$id'
+  to: '/' | '/custom' | '/history' | '/settings' | '/calibrate/$id'
+  id: '__root__' | '/' | '/custom' | '/history' | '/settings' | '/calibrate/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CustomRoute: typeof CustomRoute
   HistoryRoute: typeof HistoryRoute
   SettingsRoute: typeof SettingsRoute
   CalibrateIdRoute: typeof CalibrateIdRoute
@@ -85,6 +95,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/custom': {
+      id: '/custom'
+      path: '/custom'
+      fullPath: '/custom'
+      preLoaderRoute: typeof CustomRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CustomRoute: CustomRoute,
   HistoryRoute: HistoryRoute,
   SettingsRoute: SettingsRoute,
   CalibrateIdRoute: CalibrateIdRoute,
@@ -111,3 +129,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
