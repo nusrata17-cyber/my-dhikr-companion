@@ -410,6 +410,58 @@ function Home() {
           })}
         </div>
 
+        {/* Custom dhikr */}
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            My Custom Dhikr
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {customList.map((d) => {
+              const isSel = d.id === selectedId;
+              const prof = loadProfile(d.id);
+              const isCal = !!prof && prof.samples.length >= 5;
+              return (
+                <button
+                  key={d.id}
+                  onClick={() => setSelectedId(d.id)}
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    isSel
+                      ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
+                      : "border-border bg-card hover:border-primary/40"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-foreground">{d.name}</p>
+                  <p
+                    className="mt-1 font-arabic text-base leading-snug text-foreground/80 line-clamp-2"
+                    lang="ar"
+                  >
+                    {d.arabic}
+                  </p>
+                  <p
+                    className={`mt-2 text-[11px] font-medium ${
+                      isCal ? "text-primary" : "text-muted-foreground"
+                    }`}
+                  >
+                    {isCal ? "● Voice profile ready" : "○ Not calibrated"}
+                  </p>
+                </button>
+              );
+            })}
+            <Link
+              to="/custom"
+              className="rounded-2xl border border-dashed border-border p-4 text-left transition-colors hover:border-primary/50 flex flex-col justify-center"
+            >
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+                <Sparkles className="w-4 h-4" /> + Custom Dhikr
+              </span>
+              <span className="mt-1 text-[11px] text-muted-foreground">
+                Salawat, dua or your own recitation
+              </span>
+            </Link>
+          </div>
+        </div>
+
+
         {/* Selected dhikr display + meaning */}
         <div className="rounded-3xl bg-card border border-border p-6 text-center">
           <p className="font-arabic text-4xl leading-relaxed text-primary" lang="ar">
